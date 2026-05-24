@@ -1,0 +1,207 @@
+"""
+Typing Speed Test
+-----------------
+A terminal-based typing speed test that measures WPM, accuracy, and tracks
+your personal best scores across sessions.
+
+Author: (your name)
+"""
+
+import time
+import random
+import json
+import os
+
+# ---------------------------------------------------------------------------
+# Word bank
+# ---------------------------------------------------------------------------
+
+WORD_BANK = [
+    "the", "be", "to", "of", "and", "a", "in", "that", "have", "it",
+    "for", "not", "on", "with", "he", "as", "you", "do", "at", "this",
+    "but", "his", "by", "from", "they", "we", "say", "her", "she", "or",
+    "an", "will", "my", "one", "all", "would", "there", "their", "what",
+    "so", "up", "out", "if", "about", "who", "get", "which", "go", "me",
+    "when", "make", "can", "like", "time", "no", "just", "him", "know",
+    "take", "people", "into", "year", "your", "good", "some", "could",
+    "them", "see", "other", "than", "then", "now", "look", "only", "come",
+    "its", "over", "think", "also", "back", "after", "use", "two", "how",
+    "our", "work", "first", "well", "way", "even", "new", "want", "because",
+    "any", "these", "give", "day", "most", "us", "great", "between", "need",
+    "large", "often", "hand", "high", "place", "hold", "turn", "stand",
+]
+
+SCORES_FILE = "scores.json"
+PROMPT_LENGTH = 10   # number of words per round
+
+
+# ---------------------------------------------------------------------------
+# Score persistence
+# ---------------------------------------------------------------------------
+
+def load_scores() -> list[dict]:
+    """Load saved scores from the JSON file, or return an empty list."""
+    if not os.path.exists(SCORES_FILE):
+        return []
+    with open(SCORES_FILE, "r") as f:
+        return json.load(f)
+
+
+def save_score(wpm: float, accuracy: float) -> None:
+    """Append a new score entry to the scores file."""
+    scores = load_scores()
+    scores.append({"wpm": round(wpm, 1), "accuracy": round(accuracy, 1)})
+    with open(SCORES_FILE, "w") as f:
+        json.dump(scores, f, indent=2)
+
+
+def personal_best(scores: list[dict]) -> float:
+    """Return the highest WPM ever recorded, or 0 if no scores exist."""
+    if not scores:
+        return 0.0
+    return max(entry["wpm"] for entry in scores)
+
+
+# ---------------------------------------------------------------------------
+# Core game logic
+# ---------------------------------------------------------------------------
+
+def generate_prompt(length: int = PROMPT_LENGTH) -> str:
+    """Pick `length` random words and join them into a single string."""
+    return " ".join(random.choices(WORD_BANK, k=length))
+
+
+def calculate_wpm(text: str, elapsed_seconds: float) -> float:
+    """
+    Standard WPM formula: (characters typed / 5) / minutes elapsed.
+    Dividing by 5 treats every 5 characters as one 'word'.
+    """
+    if elapsed_seconds == 0:
+        return 0.0
+    minutes = elapsed_seconds / 60
+    words = len(text) / 5
+    return words / minutes
+
+
+def calculate_accuracy(original: str, typed: str) -> float:
+    """
+    Character-level accuracy: compare each position in both strings.
+    Extra or missing characters at the end count as mistakes.
+    """
+    total = max(len(original), len(typed))
+    if total == 0:
+        return 100.0
+
+    correct = sum(
+        1 for a, b in zip(original, typed) if a == b
+    )
+    return (correct / total) * 100
+
+
+def show_diff(original: str, typed: str) -> None:
+    """Print a character-by-character diff so the player can see mistakes."""
+    print("\n  Breakdown:")
+    result = []
+    for i, char in enumerate(original):
+        if i >= len(typed):
+            result.append(f"[_{char}]")   # missing character
+        elif typed[i] == char:
+            result.append(char)
+        else:
+            result.append(f"[{typed[i]}≠{char}]")  # wrong character
+
+    # flag any extra characters the user typed beyond the prompt length
+    if len(typed) > len(original):
+        extras = typed[len(original):]
+        result.append(f"[+{extras}]")
+
+    print("  " + "".join(result))
+
+
+# ---------------------------------------------------------------------------
+# Display helpers
+# ---------------------------------------------------------------------------
+
+def print_header() -> None:
+    print("\n" + "=" * 50)
+    print("           TYPING SPEED TEST")
+    print("=" * 50)
+
+
+def print_scores_table(scores: list[dict]) -> None:
+    """Show the last 5 scores and the all-time personal best."""
+    if not scores:
+        print("  No scores yet. Play a round first!")
+        return
+
+    print(f"\n  Personal best: {personal_best(scores)} WPM")
+    print("\n  Last 5 scores:")
+    print(f"  {'#':<5} {'WPM':<10} {'Accuracy'}")
+    print("  " + "-" * 28)
+    for i, entry in enumerate(scores[-5:], start=1):
+        print(f"  {i:<5} {entry['wpm']:<10} {entry['accuracy']}%")
+
+
+# ---------------------------------------------------------------------------
+# Main game loop
+# ---------------------------------------------------------------------------
+
+def run_round() -> None:
+    """Run a single typing round: generate prompt → time input → show stats."""
+    prompt = generate_prompt()
+
+    print("\n  Type the following words as fast as you can.")
+    print("  Press ENTER when done.\n")
+    print(f"  >>> {prompt}\n")
+
+    input("  Press ENTER to start...")
+    print("  Go!\n  > ", end="", flush=True)
+
+    start = time.time()
+    typed = input()
+    elapsed = time.time() - start
+
+    wpm = calculate_wpm(typed, elapsed)
+    accuracy = calculate_accuracy(prompt, typed)
+
+    print(f"\n  Time      : {elapsed:.2f} seconds")
+    print(f"  WPM       : {wpm:.1f}")
+    print(f"  Accuracy  : {accuracy:.1f}%")
+
+    show_diff(prompt, typed)
+
+    save_score(wpm, accuracy)
+
+    scores = load_scores()
+    pb = personal_best(scores)
+    if wpm >= pb:
+        print("\n  ★ New personal best!")
+    else:
+        print(f"\n  Personal best: {pb} WPM  (keep going!)")
+
+
+def main() -> None:
+    print_header()
+
+    while True:
+        print("\n  Options:")
+        print("  [1] Start a new round")
+        print("  [2] View score history")
+        print("  [3] Quit")
+
+        choice = input("\n  Enter choice: ").strip()
+
+        if choice == "1":
+            run_round()
+        elif choice == "2":
+            scores = load_scores()
+            print_scores_table(scores)
+        elif choice == "3":
+            print("\n  See you next time!\n")
+            break
+        else:
+            print("  Invalid choice. Enter 1, 2, or 3.")
+
+
+if __name__ == "__main__":
+    main()
